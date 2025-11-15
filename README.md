@@ -1,27 +1,28 @@
-# Threat Hunt Report: Ghost Support
+# Threat Hunt Report: _Ghost Support_
 
-**Analyst:** Aniket Agarwal  
+**Analyst:** Aniket Agarwal
+
 **Date Completed:** 2025-11-13  
+
 **Environment Investigated:** gab-intern-vm  
-**Timeframe:** November 14, 2025  
+
+**Timeframe:** October 9, 2025
 
 ---
 
 ## Executive Summary
 
-This threat hunt investigated anomalous activity on the virtual machine **gab-intern-vm** within the timeframe of **October 1–15, 2025**. The purpose was to uncover early signs of malicious activity, reconnaissance, persistence mechanisms, and potential data exfiltration attempts.
+This investigation began with a critical insight: what was documented as routine remote support on **gab-intern-vm** between **October 1-15, 2025** was, in fact, a carefully orchestrated intrusion disguised as technical assistance. 
 
-Key findings include detection of:
-- Initial execution points
-- Tampering attempts
-- Rapid data probes
-- Host and session reconnaissance
-- Storage enumeration
-- Network checks
-- Staging of artifacts
-- Outbound connection attempts
+The threat hunt uncovered a multi-phase operation that followed a clear attack lifecycle:
+- **Initial foothold** established through suspicious PowerShell execution from the Downloads folder
+- **System reconnaissance** masquerading as "support diagnostics"  
+- **Defense evasion** through tamper artifacts and misdirection
+- **Persistent access** mechanisms designed to outlast the session
+- **Data staging** for potential exfiltration
+- **Cover artifacts** planted to justify suspicious activity
 
-Evidence suggests a structured attack with clear preparation, reconnaissance, and staged persistence.
+Evidence confirms that this was not legitimate troubleshooting, but a calculated compromise that leveraged the guise of remote support to conduct unauthorized system exploration and establish persistence.
 
 ---
 
@@ -31,8 +32,7 @@ Evidence suggests a structured attack with clear preparation, reconnaissance, an
 - **Data Sources:**
   - DeviceProcessEvents
   - DeviceFileEvents
-  - DeviceNetworkEvents
-  - DeviceRegistryEvents  
+  - DeviceNetworkEvents 
 - **Timeframe:** 2025-10-01 to 2025-10-15  
 - **Objective:** Detect initial compromise indicators, attacker reconnaissance, persistence, and exfiltration attempts.
 
@@ -44,27 +44,45 @@ Evidence suggests a structured attack with clear preparation, reconnaissance, an
 
 | **Time (UTC)** | **Flag** | **Action Observed** | **Key Evidence** |
 |----------------|----------|---------------------|------------------|
-| *To be filled* | Flag 1 | Initial execution point identified | `-ExecutionPolicy` CLI parameter |
-| *To be filled* | Flag 2 | Defense tampering simulation | `DefenderTamperArtifact.lnk` |
-| *To be filled* | Flag 3 | Clipboard data probe | PowerShell `Get-Clipboard` command |
-| *To be filled* | Flag 4 | Host context reconnaissance | Host enumeration commands |
-| *To be filled* | Flag 5 | Storage surface mapping | `wmic logicaldisk get name,freespace,size` |
-| *To be filled* | Flag 6 | Connectivity validation | `RuntimeBroker.exe` network checks |
-| *To be filled* | Flag 7 | Interactive session discovery | Session enumeration commands |
-| *To be filled* | Flag 8 | Runtime application inventory | `tasklist.exe` execution |
-| *To be filled* | Flag 9 | Privilege surface check | Privilege enumeration commands |
-| *To be filled* | Flag 10 | Egress validation & proof-of-access | `www.msftconnecttest.com` connection |
-| *To be filled* | Flag 11 | Artifact staging for exfiltration | `C:\Users\Public\ReconArtifacts.zip` |
-| *To be filled* | Flag 12 | Outbound transfer attempt | IP `100.29.147.161` |
-| *To be filled* | Flag 13 | Scheduled task persistence | `SupportToolUpdater` task |
-| *To be filled* | Flag 14 | Autorun persistence mechanism | `RemoteAssistUpdater` registry entry |
-| *To be filled* | Flag 15 | Cover artifact creation | `SupportChat_log.lnk` |
+| *2025-10-09T12:22:27.6588913Z* | Flag 1 | Initial execution point identified | `-ExecutionPolicy` CLI parameter |
+| *2025-10-09T12:34:59.1260624Z* | Flag 2 | Defense tampering simulation | `DefenderTamperArtifact.lnk` |
+| *2025-10-09T12:50:39.955931Z* | Flag 3 | Clipboard data probe | PowerShell `Get-Clipboard` command |
+| *2025-10-09T12:51:44.3425653Z* | Flag 4 | Host context reconnaissance | Host enumeration commands |
+| *2025-10-09T12:51:18.3848072Z* | Flag 5 | Storage surface mapping | `wmic logicaldisk get name,freespace,size` |
+| *2025-10-09T12:51:32.5900538Z* | Flag 6 | Connectivity validation | `RuntimeBroker.exe` network checks |
+| *2025-10-09T12:50:58.3174145Z* | Flag 7 | Interactive session discovery | Session enumeration commands |
+| *2025-10-09T12:51:57.6399526Z* | Flag 8 | Runtime application inventory | `tasklist.exe` execution |
+| *2025-10-09T12:52:14.3135459Z* | Flag 9 | Privilege surface check | Privilege enumeration commands |
+| *2025-10-09T12:55:05.7658713Z* | Flag 10 | Egress validation & proof-of-access | `www.msftconnecttest.com` connection |
+| *2025-10-09T12:58:17.4364257Z* | Flag 11 | Artifact staging for exfiltration | `C:\Users\Public\ReconArtifacts.zip` |
+| *2025-10-09T13:00:40.045127Z* | Flag 12 | Outbound transfer attempt | IP `100.29.147.161` |
+| *2025-10-09T13:01:28.7700443Z* | Flag 13 | Scheduled task persistence | `SupportToolUpdater` task |
+|  | Flag 14 | Autorun persistence mechanism | `RemoteAssistUpdater` registry entry |
+| *2025-10-09T13:02:41.5698148Z* | Flag 15 | Cover artifact creation | `SupportChat_log.lnk` |
 
 ---
 
-## Investigation Narrative
+## Starting Point – Identifying the Initial System
 
-Initial analysis focused on identifying the first execution point on the host. Subsequent activities revealed attempts to simulate security tampering, enumerate system and session details, probe clipboard and storage, and stage artifacts. Outbound connection attempts and persistence mechanisms were identified, demonstrating a coordinated attempt to maintain access and exfiltrate sensitive information.
+**Objective:**
+Determine where to begin hunting based on the provided indicators that remote support tools and helpdesk-related files were recently accessed and executed from the Downloads folder during early October.
+
+- **Host of Interest:** `gab-intern-vm`  
+- **Why:** This device showed the clearest pattern of suspicious support-tool executions from the Downloads folder on October 9th, 2025, at 12:22 PM, matching the initial compromise pattern.
+- **KQL Query Used:**
+```
+DeviceProcessEvents
+| where TimeGenerated between(datetime(2025-10-01)..datetime(2025-10-15))
+| where FolderPath has @"\Downloads\" or ProcessCommandLine has @"\Downloads\"
+| where ProcessCommandLine matches regex @"(?i)(support|help|desk|tool)"
+    or FileName matches regex @"(?i)(support|help|desk|tool)"
+    or FolderPath matches regex @"(?i)(support|help|desk|tool)"
+| project TimeGenerated, DeviceName, FileName, FolderPath, 
+          ProcessCommandLine, InitiatingProcessFileName,
+          InitiatingProcessCommandLine
+| order by TimeGenerated asc
+```
+<img width="2041" height="474" alt="Screenshot 2025-11-14 194024" src="https://github.com/user-attachments/assets/146c8791-0df3-4c38-bf4a-004b35ed6439" />
 
 ---
 
@@ -83,7 +101,7 @@ DeviceProcessEvents
 | order by TimeGenerated asc
 | take 20
 ```
-<img width="428" height="258" alt="Screenshot 2025-08-17 213533" src="https://github.com/user-attachments/assets/116cd420-68e4-4dc7-8b44-fcb2d85bf242" />
+<img width="1933" height="498" alt="flag1" src="https://github.com/user-attachments/assets/b02fff14-dd90-4594-aafb-4fd5c8cbed9a" />
 
 - **Evidence Collected:** `-ExecutionPolicy` in CLI
 - **Final Finding:** The attack began with PowerShell launched from Downloads using the `-ExecutionPolicy` argument.
@@ -100,6 +118,8 @@ DeviceFileEvents
 | project TimeGenerated, FileName, FolderPath, InitiatingProcessFileName, InitiatingProcessCommandLine
 | order by TimeGenerated asc
 ```
+<img width="1993" height="553" alt="flag2" src="https://github.com/user-attachments/assets/eaaf8938-a8a6-49ae-b7e2-4b7abba181b5" />
+
 - **Evidence Collected:** `DefenderTamperArtifact.lnk`
 - **Final Finding:** Malicious actor staged a tamper artifact to simulate security changes.
 
@@ -115,6 +135,8 @@ DeviceProcessEvents
 | project TimeGenerated, FileName, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessCommandLine
 | order by TimeGenerated asc
 ```
+<img width="1500" height="532" alt="flag3" src="https://github.com/user-attachments/assets/0a4b365a-fd89-4c95-aa1b-e7eabf20640e" />
+
 - **Evidence Collected:** `"powershell.exe" -NoProfile -Sta -Command "try { Get-Clipboard | Out-Null } catch { }"`
 - **Final Finding:** Early-stage reconnaissance probed clipboard content.
 
@@ -125,7 +147,7 @@ DeviceProcessEvents
 ```
 let startTime = datetime(2025-10-01);
 let endTime   = datetime(2025-10-15);
-let recon_terms = dynamic(["qwinsta","quser","query user","query","whoami","hostname","systeminfo","net user"]);
+let recon_terms = dynamic(["qwinsta","quser","query user","query"]);
 DeviceProcessEvents
 | where DeviceName == "gab-intern-vm"
 | where TimeGenerated between (startTime .. endTime)
@@ -133,6 +155,8 @@ DeviceProcessEvents
 | project TimeGenerated, FileName, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessCommandLine, InitiatingProcessAccountName
 | order by TimeGenerated desc
 ```
+<img width="2144" height="474" alt="flag4" src="https://github.com/user-attachments/assets/33b5e62a-54d4-42ab-ae05-7084b420484e" />
+
 - **Evidence Collected:** 2025-10-09T12:51:44.3425653Z
 - **Final Finding:** Host context enumeration occurred on 2025-10-09.
 
@@ -149,6 +173,8 @@ DeviceProcessEvents
 | project TimeGenerated, FileName, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessAccountName
 | order by TimeGenerated asc
 ```
+<img width="2072" height="493" alt="flag5" src="https://github.com/user-attachments/assets/123b9e08-0d1f-4a72-a831-b617aa9f58cf" />
+
 - **Evidence Collected:** `"cmd.exe" /c wmic logicaldisk get name,freespace,size`
 - **Final Finding:** Local storage enumeration detected.
 
@@ -165,6 +191,8 @@ DeviceProcessEvents
 | project TimeGenerated, FileName, InitiatingProcessParentFileName, ProcessCommandLine, InitiatingProcessFileName, InitiatingProcessCommandLine, InitiatingProcessAccountName
 | order by TimeGenerated asc
 ```
+<img width="2057" height="303" alt="flag6" src="https://github.com/user-attachments/assets/0e8f4bb0-afbc-4172-97ca-e0bd4c8c08e0" />
+
 - **Evidence Collected:** `RuntimeBroker.exe`
 - **Final Finding:** Connectivity validation performed via RuntimeBroker.
 
@@ -181,6 +209,8 @@ DeviceProcessEvents
 | project TimeGenerated, FileName, ProcessCommandLine, InitiatingProcessCommandLine, InitiatingProcessFileName, InitiatingProcessUniqueId
 | order by TimeGenerated asc
 ```
+<img width="2507" height="492" alt="flag7" src="https://github.com/user-attachments/assets/dc87acab-2627-428c-8ae9-d2b63a66875d" />
+
 - **Evidence Collected:** `2533274790397065`
 - **Final Finding:** PowerShell process uniquely identified for session enumeration.
 
@@ -197,6 +227,8 @@ DeviceProcessEvents
 | project TimeGenerated, FileName, ProcessCommandLine, InitiatingProcessCommandLine, InitiatingProcessFileName
 | order by TimeGenerated asc
 ```
+<img width="1948" height="490" alt="flag8" src="https://github.com/user-attachments/assets/dff79a90-044a-4ac0-b7a1-b7edc6da8439" />
+
 - **Evidence Collected:** `tasklist.exe`
 - **Final Finding:** Runtime application inventory confirmed.
 
@@ -213,6 +245,8 @@ DeviceProcessEvents
 | project TimeGenerated, FileName, ProcessCommandLine, InitiatingProcessCommandLine, InitiatingProcessFileName
 | order by TimeGenerated asc
 ```
+<img width="2016" height="460" alt="flag9" src="https://github.com/user-attachments/assets/6c586b8f-c0e1-4a0b-b5cb-0b9f2473fe82" />
+
 - **Evidence Collected:** 2025-10-09T12:52:14.3135459Z
 - **Final Finding:** Privilege enumeration detected via PowerShell.
 
@@ -228,6 +262,8 @@ DeviceFileEvents
 | project TimeGenerated, FileName, FolderPath, ActionType, InitiatingProcessFileName
 | order by TimeGenerated asc
 ```
+<img width="1955" height="559" alt="flag10&#39;1" src="https://github.com/user-attachments/assets/dfba1408-3be5-4cba-949d-c5f8022caa21" />
+
 ```
 DeviceNetworkEvents
 | where DeviceName == "gab-intern-vm"
@@ -238,6 +274,8 @@ DeviceNetworkEvents
 | project TimeGenerated, InitiatingProcessFileName, RemoteIP, RemoteUrl, RemotePort, InitiatingProcessCommandLine
 | order by TimeGenerated asc
 ```
+<img width="2464" height="423" alt="flag10&#39;2" src="https://github.com/user-attachments/assets/1292a5ee-cfa7-4403-913e-67c6b0a4cf6a" />
+
 - **Evidence Collected:** First outbound: `www.msftconnecttest.com`
 - **Final Finding:** Outbound reachability confirmed post-artifact creation.
 
@@ -253,6 +291,8 @@ DeviceFileEvents
 | project TimeGenerated, FileName, FolderPath, ActionType, InitiatingProcessFileName, InitiatingProcessCommandLine
 | order by TimeGenerated asc
 ```
+<img width="2418" height="431" alt="flag11" src="https://github.com/user-attachments/assets/6fbcd0a4-1055-47d6-a303-055b7feaf2f4" />
+
 - **Evidence Collected:** `C:\Users\Public\ReconArtifacts.zip`
 - **Final Finding:** Malicious artifacts staged for exfiltration.
 
@@ -269,6 +309,8 @@ DeviceNetworkEvents
 | project TimeGenerated, InitiatingProcessFileName, RemoteIP, RemoteUrl, RemotePort, InitiatingProcessCommandLine
 | order by TimeGenerated asc
 ```
+<img width="1873" height="426" alt="flag12" src="https://github.com/user-attachments/assets/0c075bbc-f278-4314-b3ff-faf661671a5d" />
+
 - **Evidence Collected:** `100.29.147.161`
 - **Final Finding:** Last outbound connection simulated egress testing.
 
@@ -284,8 +326,9 @@ DeviceProcessEvents
    or ProcessCommandLine contains "Register-ScheduledTask"
    or FileName == "schtasks.exe"
 | order by TimeGenerated asc
-
 ```
+<img width="2549" height="279" alt="flag13" src="https://github.com/user-attachments/assets/4e17ea9d-9f4f-4fde-8029-66dbdc7c58d5" />
+
 - **Evidence Collected:** `SupportToolUpdater`
 - **Final Finding:** Persistent scheduled task created for ongoing execution.
 
@@ -315,6 +358,8 @@ DeviceFileEvents
 | project TimeGenerated, FileName, FolderPath, ActionType, InitiatingProcessFileName
 | order by TimeGenerated asc
 ```
+<img width="2144" height="462" alt="flag15" src="https://github.com/user-attachments/assets/03e19fd4-0bdc-4810-bb10-277e5de23ba1" />
+
 - **Evidence Collected:** `SupportChat_log.lnk`
 - **Final Finding:** Planted narrative created as misdirection.
 
@@ -325,10 +370,37 @@ DeviceFileEvents
 | IoC Type | Value |
 |----------|-------|
 | Files | `DefenderTamperArtifact.lnk`, `ReconArtifacts.zip`, `SupportTool.ps1`, `SupportToolUpdater`, `SupportChat_log.lnk` |
-| Outbound IP | `100.29.147.161` |
-| Outbound Domain | `www.msftconnecttest.com` |
 | Process | `RuntimeBroker.exe`, `powershell.exe`, `tasklist.exe` |
 | Scheduled Task | `SupportToolUpdater` |
+
+---
+
+## MITRE ATT&CK MAPPING
+
+### Phase 1: Initial Compromise (Flag 1)
+- **T1059.001**: PowerShell execution with bypassed execution policy
+
+### Phase 2: Defense Evasion & Persistence Setup (Flags 2, 13, 14, 15)
+- **T1562.001**: Defense tampering simulation
+- **T1053.005**: Scheduled task persistence
+- **T1547.001**: Autorun persistence
+- **T1036**: Cover artifacts for misdirection
+
+### Phase 3: Comprehensive Discovery (Flags 3-10)
+- **T1033**: User/session discovery (Flags 3, 7)
+- **T1082**: System information discovery (Flags 4, 9)
+- **T1083**: Storage discovery (Flag 5)
+- **T1046**: Network discovery (Flag 6)
+- **T1057**: Process discovery (Flag 8)
+- **T1049**: Network connection discovery (Flag 10)
+
+### Phase 4: Collection & Staging (Flags 3, 11, 12)
+- **T1560.001/002**: Data collection and archiving
+- **T1074.001**: Local data staging
+
+### Phase 5: Exfiltration Attempts (Flags 10, 12)
+- **T1071.001**: C2 communication
+- **T1041**: Exfiltration over command channel
 
 ---
 
