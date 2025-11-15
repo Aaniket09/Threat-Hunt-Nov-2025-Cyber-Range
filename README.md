@@ -28,6 +28,8 @@ Evidence confirms that this was not legitimate troubleshooting, but a calculated
 
 ## Hunt Scope
 
+- **Lab Environment:** Cyber Range
+- **Platform:** Log Analytics Workspace in Azure Sentinel
 - **Host Monitored:** gab-intern-vm  
 - **Data Sources:**
   - DeviceProcessEvents
