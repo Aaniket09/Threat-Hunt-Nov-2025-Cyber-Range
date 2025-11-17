@@ -1,4 +1,4 @@
-# Threat Hunt Report: _Ghost Support_
+# Threat Hunt Report: _Ghost Support Session_
 
 **Analyst:** Aniket Agarwal
 
